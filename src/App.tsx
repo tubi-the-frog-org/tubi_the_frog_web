@@ -40,6 +40,25 @@ function App() {
   const chunksRef = useRef<Blob[]>([]);
 
   useEffect(() => {
+    const syncSessionState = async () => {
+      try {
+        const response = await fetch('/api/health');
+        const body = (await response.json()) as { state?: SessionState };
+        const serverState = body.state === 'active' ? 'active' : 'idle';
+        setSessionState(serverState);
+
+        if (serverState === 'active') {
+          setStatus('Another customer is already using Tubi.');
+        } else {
+          setStatus('Waiting for a customer');
+        }
+      } catch (error) {
+        setStatus('Unable to reach the session server.');
+      }
+    };
+
+    void syncSessionState();
+
     const socket = new WebSocket(getSocketUrl());
     socketRef.current = socket;
 
@@ -57,7 +76,7 @@ function App() {
       const msg = JSON.parse(event.data) as ServerMessage;
 
       if (msg.type === 'session-state') {
-        const nextState = (msg.state ?? 'idle') as SessionState;
+        const nextState = (msg.payload?.state ?? 'idle') as SessionState;
         setSessionState(nextState);
         if (nextState === 'busy') {
           setStatus('Another customer is already using Tubi.');
@@ -139,6 +158,16 @@ function App() {
     addTranscript(text, 'user');
   };
 
+  const resetLock = async () => {
+    try {
+      await fetch('/api/session/reset', { method: 'POST' });
+      setSessionState('idle');
+      setStatus('Lock reset. The frog is free again.');
+    } catch (error) {
+      setStatus('Unable to reset the lock.');
+    }
+  };
+
   const startSession = async () => {
     setStatus('Awakening the wizard...');
 
@@ -152,6 +181,11 @@ function App() {
       const body = await response.json();
 
       if (!response.ok) {
+        if (response.status === 409) {
+          setSessionState('busy');
+          setStatus('Another customer is already using Tubi.');
+          return;
+        }
         throw new Error(body?.error ?? 'Unable to start the session');
       }
 
@@ -261,9 +295,14 @@ function App() {
           )}
 
           {sessionState === 'busy' && (
-            <button className="secondary-button" disabled>
-              Frog is busy
-            </button>
+            <div className="mic-controls">
+              <button className="secondary-button" disabled>
+                Frog is busy
+              </button>
+              <button className="tiny-button" onClick={resetLock}>
+                Reset lock (dev only)
+              </button>
+            </div>
           )}
 
           {sessionState === 'active' && (

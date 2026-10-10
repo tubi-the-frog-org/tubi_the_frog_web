@@ -76,6 +76,17 @@ app.post('/api/session/end', (_, res) => {
   res.json({ ok: true, status: 'idle' });
 });
 
+app.post('/api/session/reset', (_, res) => {
+  lock.active = false;
+  lock.sessionId = null;
+  lock.startedAt = null;
+  lock.lastHeartbeat = null;
+  lock.clientId = null;
+
+  publishState();
+  res.json({ ok: true, status: 'idle' });
+});
+
 app.post('/api/transcribe', async (req, res) => {
   try {
     if (!req.body || req.body.length === 0) {
