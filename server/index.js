@@ -3,7 +3,7 @@ import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
-import { writeFileSync, existsSync } from 'node:fs';
+import { writeFileSync, existsSync, appendFileSync, mkdirSync } from 'node:fs';
 import os from 'node:os';
 import { WebSocketServer } from 'ws';
 
@@ -11,6 +11,17 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
 const distDir = path.join(rootDir, 'dist');
+const transcriptOutputPath = path.join(rootDir, 'output', 'transcripts.jsonl');
+
+const appendTranscriptFile = (text) => {
+  const outputDir = path.dirname(transcriptOutputPath);
+  mkdirSync(outputDir, { recursive: true });
+  appendFileSync(
+    transcriptOutputPath,
+    `${JSON.stringify({ timestamp: new Date().toISOString(), text })}\n`,
+    'utf8'
+  );
+};
 
 const app = express();
 const server = http.createServer(app);
@@ -42,8 +53,7 @@ const publishState = () => {
   });
 };
 
-app.use(express.json({ limit: '1mb' }));
-app.use(express.raw({ type: '*/*', limit: '10mb' }));
+app.use(express.json({ limit: '10mb' }));
 
 app.get('/api/health', (_, res) => {
   res.json({ ok: true, state: lock.active ? 'active' : 'idle' });
@@ -89,16 +99,42 @@ app.post('/api/session/reset', (_, res) => {
 
 app.post('/api/transcribe', async (req, res) => {
   try {
-    if (!req.body || req.body.length === 0) {
+    if (!req.body || (typeof req.body === 'object' && Object.keys(req.body).length === 0)) {
       return res.status(400).json({ ok: false, error: 'missing audio payload' });
     }
 
-    const audioPath = path.join(os.tmpdir(), `tubi-audio-${Date.now()}.webm`);
-    writeFileSync(audioPath, req.body);
+    let audioBuffer;
+    let mimeType = 'audio/webm';
+    let extension = 'webm';
+
+    const candidate =
+      (typeof req.body === 'object' && req.body !== null && 'audioBase64' in req.body)
+        ? req.body.audioBase64
+        : (typeof req.body === 'object' && req.body !== null && 'audio' in req.body)
+          ? req.body.audio
+          : undefined;
+
+    if (Buffer.isBuffer(req.body)) {
+      audioBuffer = req.body;
+    } else if (typeof candidate === 'string') {
+      mimeType = req.body.mimeType || 'audio/webm';
+      extension = req.body.extension || (mimeType.includes('wav') ? 'wav' : 'webm');
+      const base64Data = candidate.replace(/^data:audio\/[a-zA-Z0-9.+-]+;base64,/, '');
+      audioBuffer = Buffer.from(base64Data, 'base64');
+    } else if (typeof req.body === 'string') {
+      audioBuffer = Buffer.from(req.body, 'base64');
+    } else if (ArrayBuffer.isView(req.body) || req.body instanceof ArrayBuffer) {
+      audioBuffer = Buffer.from(req.body);
+    } else {
+      audioBuffer = Buffer.from(JSON.stringify(req.body));
+    }
+
+    const audioPath = path.join(os.tmpdir(), `tubi-audio-${Date.now()}.${extension}`);
+    writeFileSync(audioPath, audioBuffer);
 
     const pythonScript = path.join(rootDir, 'python', 'stt_worker.py');
     const result = await new Promise((resolve, reject) => {
-      const child = spawn('python3', [pythonScript, audioPath], {
+      const child = spawn('.venv/bin/python', [pythonScript, audioPath, transcriptOutputPath], {
         cwd: rootDir,
         env: process.env
       });
@@ -127,7 +163,9 @@ app.post('/api/transcribe', async (req, res) => {
       });
     });
 
-    res.json({ ok: true, text: result.text || 'I did not catch that clearly.' });
+    const text = result.text || 'I did not catch that clearly.';
+    appendTranscriptFile(text);
+    res.json({ ok: true, text });
   } catch (error) {
     res.status(500).json({
       ok: false,

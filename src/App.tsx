@@ -33,6 +33,7 @@ function App() {
   const [sessionState, setSessionState] = useState<SessionState>('idle');
   const [status, setStatus] = useState('Waiting for a customer');
   const [transcripts, setTranscripts] = useState<TranscriptItem[]>([]);
+  const [lastTranscription, setLastTranscription] = useState('No transcription yet.');
   const [isRecording, setIsRecording] = useState(false);
   const [isSocketConnected, setIsSocketConnected] = useState(false);
   const socketRef = useRef<WebSocket | null>(null);
@@ -122,6 +123,7 @@ function App() {
   };
 
   const addTranscript = (text: string, source: 'user' | 'system' = 'system') => {
+    setLastTranscription(text);
     setTranscripts((current) => [
       {
         id: `${Date.now()}-${Math.random()}`,
@@ -233,18 +235,33 @@ function App() {
 
       recorder.onstop = async () => {
         const audioBlob = new Blob(chunksRef.current, { type: mimeType });
+        const arrayBuffer = await audioBlob.arrayBuffer();
+        const bytes = new Uint8Array(arrayBuffer);
+        let binary = '';
+
+        bytes.forEach((byte) => {
+          binary += String.fromCharCode(byte);
+        });
+
+        const base64 = btoa(binary);
+
         const response = await fetch('/api/transcribe', {
           method: 'POST',
           headers: {
-            'Content-Type': audioBlob.type || 'audio/webm'
+            'Content-Type': 'application/json'
           },
-          body: audioBlob
+          body: JSON.stringify({
+            audioBase64: base64,
+            mimeType: audioBlob.type || 'audio/webm',
+            extension: audioBlob.type.includes('wav') ? 'wav' : 'webm'
+          })
         });
 
-        const data = (await response.json()) as { text?: string; error?: string };
+          const data = (await response.json()) as { text?: string; error?: string };
         const text = data.text || 'I did not catch that clearly.';
 
         addTranscript(text, 'user');
+        setStatus(`Python transcription: ${text}`);
         stream.getTracks().forEach((track) => track.stop());
       };
 
@@ -330,7 +347,12 @@ function App() {
         </div>
 
         <div className="transcript-box">
-          <h2>Transcript</h2>
+          <h2>Python STT transcript</h2>
+          <div className="last-transcription">
+            <span className="label">Latest result</span>
+            <p>{lastTranscription}</p>
+          </div>
+
           {transcripts.length === 0 ? (
             <p className="empty-state">No transcript yet.</p>
           ) : (
