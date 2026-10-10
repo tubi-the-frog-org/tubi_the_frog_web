@@ -448,21 +448,113 @@ function App() {
     }
   };
 
+  const orbText = isCalibrating
+    ? 'Quiet'
+    : isRecording
+      ? 'Listening'
+      : sessionState === 'idle'
+        ? 'Awaken'
+        : sessionState === 'busy'
+          ? 'Resting'
+          : 'Speak';
+
   return (
-    <div className="app-shell">
-      <div className="app-card">
-        <header className="topbar">
-          <div>
-            <p className="eyebrow">Tubi the Wizard Frog</p>
-            <h1>Awaken the Wizard</h1>
+    <main className="wizard-screen">
+      <header className="wizard-header">
+        <p className="brand-kicker">A little magic, just for you</p>
+        <h1>Tubi the<br />Wizard Frog</h1>
+        <span className={`connection-mark ${isSocketConnected ? 'connected' : ''}`} aria-label={isSocketConnected ? 'Connected' : 'Connecting'} />
+      </header>
+
+      <section className="interaction-scene" aria-label="Talk with Tubi">
+        <p className={`session-message ${sessionState === 'busy' ? 'is-busy' : ''}`} role="status">
+          {sessionState === 'busy' ? 'Tubi is with another guest' : status}
+        </p>
+
+        {lastTranscription !== 'No transcription yet.' && (
+          <div className="latest-words" aria-live="polite">
+            <span>{transcripts[0]?.source === 'user' ? 'Your words' : 'Tubi heard'}</span>
+            <p>{lastTranscription}</p>
           </div>
-          <span className={`status-dot ${isSocketConnected ? 'connected' : 'disconnected'}`} />
-        </header>
+        )}
 
-        <div className="panel">
-          <p className="status-message">{status}</p>
+        <div className={`crystal-console ${isRecording || isCalibrating ? 'is-lit' : ''}`}>
+          <span className="crystal-stand" aria-hidden="true" />
+          <button
+            className={`crystal-control state-${sessionState} ${isRecording ? 'is-recording' : ''} ${isCalibrating ? 'is-calibrating' : ''}`}
+            type="button"
+            aria-label={sessionState === 'idle'
+              ? 'Awaken Tubi'
+              : sessionState === 'busy'
+                ? 'Tubi is busy'
+                : isCalibrating
+                  ? 'Calibrating microphone'
+                  : isRecording
+                    ? 'Listening, release to send'
+                    : 'Press and hold to speak'}
+            disabled={sessionState === 'busy'}
+            onClick={() => {
+              if (sessionState === 'idle') void startSession();
+            }}
+            onPointerDown={(event) => {
+              if (sessionState !== 'active') return;
+              event.currentTarget.setPointerCapture(event.pointerId);
+              void startRecording();
+            }}
+            onPointerUp={() => {
+              if (sessionState === 'active') void stopRecording();
+            }}
+            onPointerCancel={() => {
+              if (sessionState === 'active') void stopRecording();
+            }}
+            onLostPointerCapture={() => {
+              if (sessionState === 'active') void stopRecording();
+            }}
+          >
+            <span className="crystal-sphere" aria-hidden="true">
+              <span className="crystal-glint" />
+              <span className="crystal-current current-one" />
+              <span className="crystal-current current-two" />
+              <span className="crystal-word">{orbText}</span>
+            </span>
+          </button>
+          <p className="crystal-hint">
+            {isCalibrating
+              ? 'Stay quiet for a moment'
+              : isRecording
+                ? 'Release when you are finished'
+                : sessionState === 'active'
+                  ? 'Press and hold to speak'
+                  : sessionState === 'busy'
+                    ? 'A guest is speaking with Tubi'
+                    : 'Touch the crystal to awaken Tubi'}
+          </p>
+          {sessionState === 'active' && (
+            <button className="end-session-button" type="button" onClick={endSession}>
+              Let Tubi rest
+            </button>
+          )}
+        </div>
+      </section>
 
-          {import.meta.env.DEV && (
+      {transcripts.length > 0 && (
+        <details className="transcript-history">
+          <summary>Conversation notes <span>{transcripts.length}</span></summary>
+          <ul>
+            {transcripts.map((item) => (
+              <li key={item.id}>
+                <span>{item.source === 'user' ? 'You' : 'Tubi'} · {item.createdAt}</span>
+                <p>{item.text}</p>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+
+      {import.meta.env.DEV && (
+        <details className="dev-drawer">
+          <summary>Test controls</summary>
+          <div className="dev-tools">
             <label className="busy-test-toggle">
               <input
                 type="checkbox"
@@ -471,92 +563,22 @@ function App() {
               />
               <span>Simulate frog busy</span>
             </label>
-          )}
-
-          {sessionState === 'idle' && (
-            <button className="primary-button" onClick={startSession}>
-              Awaken Tubi
-            </button>
-          )}
-
-          {sessionState === 'active' && (
-            <div className="mic-controls">
-              <button
-                className={`speak-button ${isRecording ? 'recording' : ''}`}
-                onPointerDown={startRecording}
-                onPointerUp={stopRecording}
-                onPointerLeave={stopRecording}
-                onPointerCancel={stopRecording}
-              >
-                {isCalibrating ? 'Calibrating mic... stay quiet' : isRecording ? 'Listening… release to send' : 'Hold to speak'}
-              </button>
-
-              <button className="secondary-button" onClick={endSession}>
-                End session
-              </button>
-            </div>
-          )}
-
-          {sessionState === 'busy' && (
-            <div className="mic-controls">
-              <button className="secondary-button" disabled>
-                Frog is busy
-              </button>
-              {import.meta.env.DEV && (
-                <button className="tiny-button" onClick={resetLock}>
-                  Reset lock (dev only)
-                </button>
-              )}
-            </div>
-          )}
-
-          {sessionState === 'active' && (
-            <div className="demo-controls">
-              <h3>Fake backend</h3>
+            {sessionState === 'busy' && (
+              <button className="tiny-button" onClick={resetLock}>Reset session lock</button>
+            )}
+            {sessionState === 'active' && (
               <div className="demo-grid">
-                <button className="tiny-button" onClick={triggerDemoTranscript}>
-                  Simulate transcript
-                </button>
-                <button className="tiny-button" onClick={() => triggerDemoDisplay('inkblot', 'Tubi is showing an inkblot.', { kind: 'inkblot', seed: 'wizard-42' })}>
-                  Show inkblot
-                </button>
-                <button className="tiny-button" onClick={() => triggerDemoDisplay('result', 'Tubi has chosen a snack.', { snack: 'Crispy Cranberry Crunch' })}>
-                  Show snack
-                </button>
-                <button className="tiny-button" onClick={() => triggerDemoDisplay('display', 'Tubi is speaking.', { speaking: true })}>
-                  Tubi speaking
-                </button>
-                <button className="tiny-button" onClick={() => triggerDemoDisplay('display', 'Tubi stopped speaking.', { speaking: false })}>
-                  Tubi quiet
-                </button>
+                <button className="tiny-button" onClick={triggerDemoTranscript}>Simulate transcript</button>
+                <button className="tiny-button" onClick={() => triggerDemoDisplay('inkblot', 'Tubi is showing an inkblot.', { kind: 'inkblot', seed: 'wizard-42' })}>Show inkblot</button>
+                <button className="tiny-button" onClick={() => triggerDemoDisplay('result', 'Tubi has chosen a snack.', { snack: 'Crispy Cranberry Crunch' })}>Show snack</button>
+                <button className="tiny-button" onClick={() => triggerDemoDisplay('display', 'Tubi is speaking.', { speaking: true })}>Tubi speaking</button>
+                <button className="tiny-button" onClick={() => triggerDemoDisplay('display', 'Tubi stopped speaking.', { speaking: false })}>Tubi quiet</button>
               </div>
-            </div>
-          )}
-        </div>
-
-        <div className="transcript-box">
-          <h2>Python STT transcript</h2>
-          <div className="last-transcription">
-            <span className="label">Latest result</span>
-            <p>{lastTranscription}</p>
+            )}
           </div>
-
-          {transcripts.length === 0 ? (
-            <p className="empty-state">No transcript yet.</p>
-          ) : (
-            <ul>
-              {transcripts.map((item) => (
-                <li key={item.id} className={item.source}>
-                  <span>{item.createdAt}</span>
-                  <strong>{item.source === 'user' ? 'You' : 'Tubi'}</strong>
-                  <p>{item.text}</p>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </div>
-    </div>
+        </details>
+      )}
+    </main>
   );
 }
 
