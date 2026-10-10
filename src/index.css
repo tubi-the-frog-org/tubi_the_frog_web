@@ -1,7 +1,7 @@
 :root {
   font-family: 'Palatino Linotype', 'Book Antiqua', Georgia, serif;
-  color: #f4e8ba;
-  background: #09251d;
+  color: #f4ead0;
+  background: #092117;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -23,7 +23,7 @@ body,
 body {
   min-width: 320px;
   min-height: 100vh;
-  background: #09251d;
+  background: #092117;
 }
 
 button,
@@ -49,9 +49,10 @@ button {
   overflow-x: hidden;
   overflow-y: auto;
   background:
-    radial-gradient(ellipse at 50% 43%, rgba(30, 79, 57, 0.74), transparent 46%),
-    repeating-linear-gradient(132deg, transparent 0 52px, rgba(218, 190, 111, 0.025) 53px 54px, transparent 55px 108px),
-    linear-gradient(160deg, #123c2d 0%, #09291f 44%, #061c19 100%);
+    radial-gradient(ellipse at 50% 47%, rgba(51, 126, 48, 0.43), transparent 49%),
+    repeating-linear-gradient(0deg, transparent 0 5px, rgba(209, 237, 164, 0.025) 6px, transparent 7px 12px),
+    repeating-linear-gradient(132deg, transparent 0 52px, rgba(218, 190, 111, 0.035) 53px 54px, transparent 55px 108px),
+    linear-gradient(160deg, #17442a 0%, #0d3020 44%, #071e18 100%);
   box-shadow: 0 0 100px rgba(0, 0, 0, 0.34);
 }
 
@@ -65,7 +66,7 @@ button {
 
 .wizard-screen::before {
   inset: 0.8rem;
-  border: 1px solid rgba(218, 190, 111, 0.12);
+  border: 1px solid rgba(177, 207, 111, 0.17);
   border-radius: 46% 46% 8px 8px / 12% 12% 8px 8px;
 }
 
@@ -91,19 +92,33 @@ button {
 
 .brand-kicker {
   margin: 0 0 0.55rem;
-  color: #c9bb7c;
+  color: #d2b9e4;
   font-family: Georgia, serif;
   font-size: 0.8rem;
   font-style: italic;
 }
 
+.brand-kicker::before {
+  display: block;
+  width: 2.2rem;
+  height: 2.25rem;
+  margin: 0 auto 0.35rem;
+  background:
+    radial-gradient(circle at 40% 69%, #e8cf68 0 2px, transparent 2.5px),
+    radial-gradient(circle at 65% 42%, #e8cf68 0 2px, transparent 2.5px),
+    linear-gradient(160deg, #8855bb, #4b2875 78%);
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  content: '';
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.36));
+}
+
 .wizard-header h1 {
   margin: 0;
-  color: #e5c96e;
+  color: #e8ce76;
   font-size: 3.25rem;
   font-weight: 600;
   line-height: 0.94;
-  text-shadow: 0 2px 0 rgba(67, 49, 22, 0.8), 0 8px 30px rgba(234, 195, 89, 0.1);
+  text-shadow: 0 2px 0 rgba(67, 49, 22, 0.8), 0 8px 30px rgba(234, 195, 89, 0.14);
 }
 
 .connection-mark {
@@ -135,7 +150,7 @@ button {
   max-width: 30rem;
   min-height: 1.5rem;
   margin: 0;
-  color: rgba(240, 229, 190, 0.78);
+  color: rgba(239, 235, 211, 0.8);
   font-family: Georgia, serif;
   font-size: 0.95rem;
   line-height: 1.4;
@@ -218,17 +233,17 @@ button {
   border: 2px solid rgba(213, 230, 220, 0.68);
   border-radius: 50%;
   background:
-    radial-gradient(ellipse at 30% 18%, rgba(255, 255, 240, 0.94) 0%, rgba(255, 255, 255, 0.25) 8%, transparent 22%),
-    radial-gradient(ellipse at 72% 75%, rgba(244, 201, 119, 0.88), transparent 30%),
-    radial-gradient(ellipse at 24% 68%, rgba(118, 203, 195, 0.9), transparent 34%),
-    radial-gradient(ellipse at 72% 36%, rgba(164, 147, 223, 0.95), transparent 42%),
-    radial-gradient(circle at 48% 42%, #bbd9d4 0%, #99c8cb 28%, #6f9da7 58%, #416572 78%, #25434a 100%);
+    radial-gradient(ellipse at 30% 18%, rgba(255, 255, 240, 0.96) 0%, rgba(255, 255, 255, 0.25) 8%, transparent 22%),
+    radial-gradient(ellipse at 72% 75%, rgba(224, 222, 142, 0.9), transparent 30%),
+    radial-gradient(ellipse at 24% 68%, rgba(121, 209, 130, 0.92), transparent 34%),
+    radial-gradient(ellipse at 72% 36%, rgba(176, 149, 218, 0.94), transparent 42%),
+    radial-gradient(circle at 48% 42%, #d0dfbd 0%, #a6d0ac 28%, #79a795 58%, #4b796a 78%, #274d42 100%);
   box-shadow:
     inset -16px -20px 34px rgba(2, 27, 30, 0.52),
     inset 9px 8px 24px rgba(255, 255, 255, 0.44),
     0 0 0 5px rgba(210, 184, 105, 0.48),
     0 13px 27px rgba(0, 0, 0, 0.4),
-    0 0 22px rgba(157, 202, 194, 0.3);
+    0 0 22px rgba(171, 220, 141, 0.34);
   transition: transform 220ms ease, filter 220ms ease, box-shadow 220ms ease;
   animation: crystal-breathe 5s ease-in-out infinite;
 }
@@ -272,13 +287,13 @@ button {
 }
 
 .current-one {
-  background: linear-gradient(90deg, transparent 24%, rgba(191, 234, 220, 0.54), rgba(188, 159, 237, 0.7), transparent 75%);
+  background: linear-gradient(90deg, transparent 24%, rgba(184, 230, 168, 0.62), rgba(188, 159, 237, 0.72), transparent 75%);
 }
 
 .current-two {
   inset: 38% -28%;
   transform: rotate(32deg) scale(0.75, 0.32);
-  background: linear-gradient(90deg, transparent 18%, rgba(238, 204, 126, 0.6), rgba(148, 213, 209, 0.48), transparent 78%);
+  background: linear-gradient(90deg, transparent 18%, rgba(238, 204, 126, 0.65), rgba(148, 213, 154, 0.55), transparent 78%);
 }
 
 .crystal-word {
@@ -295,19 +310,16 @@ button {
   font-size: 1.9rem;
 }
 
-.crystal-stand {
+.altar-artwork {
   position: absolute;
-  z-index: 0;
-  top: 13.5rem;
-  width: min(11.7rem, 58vw);
-  height: 4rem;
-  border: 2px solid rgba(215, 190, 126, 0.72);
-  border-radius: 40% 40% 12px 12px;
-  background:
-    linear-gradient(90deg, rgba(43, 44, 32, 0.94), rgba(140, 105, 55, 0.96) 48%, rgba(41, 46, 34, 0.98)),
-    #76603c;
-  box-shadow: inset 0 8px 10px rgba(239, 213, 154, 0.26), 0 12px 15px rgba(0, 0, 0, 0.4);
-  clip-path: polygon(13% 0, 87% 0, 100% 100%, 0 100%);
+  z-index: 1;
+  bottom: -1rem;
+  left: 50%;
+  width: min(100vw, 30rem);
+  height: auto;
+  transform: translateX(-50%);
+  clip-path: inset(34% 0 6%);
+  pointer-events: none;
 }
 
 .crystal-hint {
@@ -315,7 +327,7 @@ button {
   z-index: 2;
   min-height: 1.3rem;
   margin: -0.3rem 0 0;
-  color: #e4d69f;
+  color: #eee1ab;
   font-family: Georgia, serif;
   font-size: 0.9rem;
   text-align: center;
@@ -495,11 +507,6 @@ button {
     width: 12rem;
   }
 
-  .crystal-stand {
-    top: 10.9rem;
-    width: 10rem;
-    height: 3.4rem;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {

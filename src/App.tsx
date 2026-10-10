@@ -479,7 +479,7 @@ function App() {
         )}
 
         <div className={`crystal-console ${isRecording || isCalibrating ? 'is-lit' : ''}`}>
-          <span className="crystal-stand" aria-hidden="true" />
+          <img className="altar-artwork" src="/Firefly.png" alt="" aria-hidden="true" />
           <button
             className={`crystal-control state-${sessionState} ${isRecording ? 'is-recording' : ''} ${isCalibrating ? 'is-calibrating' : ''}`}
             type="button"
