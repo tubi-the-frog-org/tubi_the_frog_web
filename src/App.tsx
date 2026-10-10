@@ -35,10 +35,13 @@ function App() {
   const [transcripts, setTranscripts] = useState<TranscriptItem[]>([]);
   const [lastTranscription, setLastTranscription] = useState('No transcription yet.');
   const [isRecording, setIsRecording] = useState(false);
+  const [isCalibrating, setIsCalibrating] = useState(false);
   const [isSocketConnected, setIsSocketConnected] = useState(false);
   const socketRef = useRef<WebSocket | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  const hasCalibratedRef = useRef(false);
+  const recordingRequestedRef = useRef(false);
 
   useEffect(() => {
     const syncSessionState = async () => {
@@ -191,6 +194,7 @@ function App() {
         throw new Error(body?.error ?? 'Unable to start the session');
       }
 
+      hasCalibratedRef.current = false;
       setSessionState('active');
       setStatus('Session started. Press and hold to speak.');
       sendSocketMessage('session:start', { sessionId: body.sessionId });
@@ -212,7 +216,8 @@ function App() {
   };
 
   const stopRecording = async () => {
-    if (!mediaRecorderRef.current) return;
+    recordingRequestedRef.current = false;
+    if (!mediaRecorderRef.current || mediaRecorderRef.current.state === 'inactive') return;
 
     mediaRecorderRef.current.stop();
     setIsRecording(false);
@@ -220,9 +225,72 @@ function App() {
 
   const startRecording = async () => {
     if (!canRecord) return;
+    recordingRequestedRef.current = true;
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      });
+
+      if (!recordingRequestedRef.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+
+      let noisyEnvironment = false;
+      if (!hasCalibratedRef.current) {
+        setIsCalibrating(true);
+        setStatus('Calibrating microphone. Stay quiet for a moment...');
+
+        try {
+          const audioContext = new AudioContext();
+          const analyser = audioContext.createAnalyser();
+          const source = audioContext.createMediaStreamSource(stream);
+          const silentGain = audioContext.createGain();
+          const samples = new Float32Array(analyser.fftSize);
+          const noiseLevels: number[] = [];
+
+          analyser.fftSize = 2048;
+          silentGain.gain.value = 0;
+          source.connect(analyser);
+          analyser.connect(silentGain);
+          silentGain.connect(audioContext.destination);
+          await audioContext.resume();
+
+          const calibrationInterval = window.setInterval(() => {
+            analyser.getFloatTimeDomainData(samples);
+            const rms = Math.sqrt(samples.reduce((sum, sample) => sum + sample * sample, 0) / samples.length);
+            noiseLevels.push(rms);
+          }, 60);
+
+          await new Promise((resolve) => window.setTimeout(resolve, 1000));
+          window.clearInterval(calibrationInterval);
+          source.disconnect();
+          analyser.disconnect();
+          silentGain.disconnect();
+          await audioContext.close();
+
+          const noiseFloor = noiseLevels.length
+            ? noiseLevels.reduce((sum, level) => sum + level, 0) / noiseLevels.length
+            : 0;
+          noisyEnvironment = noiseFloor > 0.04;
+        } catch {
+          noisyEnvironment = false;
+        }
+
+        hasCalibratedRef.current = true;
+        setIsCalibrating(false);
+      }
+
+      if (!recordingRequestedRef.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+
       const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/webm;codecs=opus';
       const recorder = new MediaRecorder(stream, { mimeType });
       chunksRef.current = [];
@@ -234,6 +302,7 @@ function App() {
       };
 
       recorder.onstop = async () => {
+        mediaRecorderRef.current = null;
         const audioBlob = new Blob(chunksRef.current, { type: mimeType });
         const arrayBuffer = await audioBlob.arrayBuffer();
         const bytes = new Uint8Array(arrayBuffer);
@@ -268,8 +337,11 @@ function App() {
       mediaRecorderRef.current = recorder;
       recorder.start();
       setIsRecording(true);
-      setStatus('Listening... release when you are done speaking.');
+      setStatus(noisyEnvironment
+        ? 'Listening... background noise is high; speak close to the mic.'
+        : 'Listening... release when you are done speaking.');
     } catch (error) {
+      setIsCalibrating(false);
       setStatus('Microphone access was blocked. Please allow access and try again.');
     }
   };
@@ -301,8 +373,9 @@ function App() {
                 onPointerDown={startRecording}
                 onPointerUp={stopRecording}
                 onPointerLeave={stopRecording}
+                onPointerCancel={stopRecording}
               >
-                {isRecording ? 'Listening… release to send' : 'Hold to speak'}
+                {isCalibrating ? 'Calibrating mic... stay quiet' : isRecording ? 'Listening… release to send' : 'Hold to speak'}
               </button>
 
               <button className="secondary-button" onClick={endSession}>
