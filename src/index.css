@@ -1,0 +1,235 @@
+:root {
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color: #f6f0ff;
+  background: #100c1a;
+  line-height: 1.5;
+  font-weight: 400;
+  color-scheme: dark;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  margin: 0;
+  min-height: 100%;
+  min-height: 100vh;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: radial-gradient(circle at top, #261b3e 0%, #120d1f 42%, #09070d 100%);
+}
+
+button {
+  font: inherit;
+}
+
+.app-shell {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.app-card {
+  width: min(100%, 480px);
+  background: rgba(17, 12, 28, 0.8);
+  border: 1px solid rgba(191, 165, 255, 0.3);
+  border-radius: 28px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+  padding: 24px 20px 18px;
+}
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.eyebrow {
+  margin: 0 0 6px;
+  font-size: 0.72rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #bda6ff;
+}
+
+h1 {
+  margin: 0;
+  font-size: clamp(2rem, 6vw, 2.8rem);
+  line-height: 1.05;
+}
+
+.status-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  display: inline-block;
+  box-shadow: 0 0 16px currentColor;
+}
+
+.status-dot.connected {
+  background: #66d9a8;
+  color: #66d9a8;
+}
+
+.status-dot.disconnected {
+  background: #f4a261;
+  color: #f4a261;
+}
+
+.panel {
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 18px;
+  margin-bottom: 18px;
+}
+
+.status-message {
+  margin: 0 0 16px;
+  color: #e7d9ff;
+  min-height: 24px;
+}
+
+.primary-button,
+.secondary-button,
+.speak-button {
+  width: 100%;
+  border: none;
+  border-radius: 16px;
+  padding: 16px 18px;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+}
+
+.primary-button:hover,
+.secondary-button:hover,
+.speak-button:hover {
+  transform: translateY(-1px);
+}
+
+.primary-button {
+  background: linear-gradient(135deg, #8b5cf6, #c084fc);
+  color: white;
+  font-weight: 700;
+  box-shadow: 0 12px 22px rgba(139, 92, 246, 0.45);
+}
+
+.secondary-button {
+  background: rgba(255, 255, 255, 0.08);
+  color: white;
+}
+
+.mic-controls {
+  display: grid;
+  gap: 12px;
+}
+
+.speak-button {
+  background: linear-gradient(135deg, #ef4444, #f97316);
+  color: white;
+  font-weight: 800;
+  min-height: 72px;
+}
+
+.speak-button.recording {
+  background: linear-gradient(135deg, #16a34a, #22c55e);
+  box-shadow: 0 0 0 6px rgba(34, 197, 94, 0.14);
+}
+
+.demo-controls {
+  margin-top: 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 16px;
+}
+
+.demo-controls h3 {
+  margin: 0 0 10px;
+  font-size: 0.82rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #d7c5ff;
+}
+
+.demo-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.tiny-button {
+  border: 1px solid rgba(191, 165, 255, 0.3);
+  background: rgba(255, 255, 255, 0.04);
+  color: white;
+  border-radius: 10px;
+  padding: 10px 8px;
+  cursor: pointer;
+}
+
+.transcript-box {
+  background: rgba(12, 9, 18, 0.5);
+  border-radius: 18px;
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.transcript-box h2 {
+  margin: 0 0 12px;
+  font-size: 1.1rem;
+}
+
+.empty-state {
+  margin: 0;
+  color: #cbb6ee;
+}
+
+.transcript-box ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.transcript-box li {
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.transcript-box li span {
+  display: block;
+  font-size: 0.7rem;
+  opacity: 0.7;
+  margin-bottom: 4px;
+}
+
+.transcript-box li strong {
+  display: inline-block;
+  margin-bottom: 6px;
+}
+
+.transcript-box li p {
+  margin: 0;
+  color: #f1eaff;
+}
+
+.transcript-box li.system {
+  border-color: rgba(163, 230, 53, 0.25);
+}
+
+.transcript-box li.user {
+  border-color: rgba(196, 181, 253, 0.25);
+}
