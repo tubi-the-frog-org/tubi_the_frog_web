@@ -6,6 +6,7 @@ import { spawn } from 'node:child_process';
 import { writeFileSync, existsSync, appendFileSync, mkdirSync } from 'node:fs';
 import os from 'node:os';
 import { WebSocketServer } from 'ws';
+import { SessionLock } from './session-lock.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -23,16 +24,30 @@ const appendTranscriptFile = (text) => {
   );
 };
 
+const resetTranscriptFile = () => {
+  mkdirSync(path.dirname(transcriptOutputPath), { recursive: true });
+  writeFileSync(transcriptOutputPath, '', 'utf8');
+};
+
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
-const lock = {
-  active: false,
-  sessionId: null,
-  startedAt: null,
-  lastHeartbeat: null,
-  clientId: null
+const getDuration = (name, fallback) => {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+};
+
+const sessionLock = new SessionLock({
+  idleTimeoutMs: getDuration('SESSION_IDLE_TIMEOUT_MS', 60_000),
+  maxDurationMs: getDuration('SESSION_MAX_DURATION_MS', 180_000)
+});
+let devBusySessionId = null;
+
+const clearExpiredDevBusy = () => {
+  if (devBusySessionId && !sessionLock.isOwner(devBusySessionId)) {
+    devBusySessionId = null;
+  }
 };
 
 const broadcast = (type, payload = {}) => {
@@ -45,60 +60,135 @@ const broadcast = (type, payload = {}) => {
 };
 
 const publishState = () => {
-  broadcast('session-state', {
-    state: lock.active ? 'active' : 'idle',
-    sessionId: lock.sessionId,
-    startedAt: lock.startedAt,
-    clientId: lock.clientId
-  });
+  broadcast('session-state', sessionLock.snapshot());
 };
+
+const expiryTimer = setInterval(() => {
+  if (sessionLock.expireIfNeeded()) {
+    clearExpiredDevBusy();
+    resetTranscriptFile();
+    publishState();
+  }
+}, 5_000);
+expiryTimer.unref();
 
 app.use(express.json({ limit: '10mb' }));
 
 app.get('/api/health', (_, res) => {
-  res.json({ ok: true, state: lock.active ? 'active' : 'idle' });
+  if (sessionLock.expireIfNeeded()) {
+    resetTranscriptFile();
+    publishState();
+  }
+  clearExpiredDevBusy();
+  res.json({ ok: true, ...sessionLock.snapshot(), devBusy: Boolean(devBusySessionId) });
 });
 
-app.post('/api/session/start', (req, res) => {
-  if (lock.active) {
+app.post('/api/session/start', (_, res) => {
+  if (sessionLock.expireIfNeeded()) {
+    resetTranscriptFile();
+    publishState();
+  }
+  const session = sessionLock.start();
+  if (!session) {
     return res.status(409).json({ ok: false, error: 'frog busy' });
   }
 
-  const sessionId = `session-${Date.now()}`;
-  lock.active = true;
-  lock.sessionId = sessionId;
-  lock.startedAt = Date.now();
-  lock.lastHeartbeat = Date.now();
-  lock.clientId = req.body?.clientId ?? 'unknown-client';
-
+  resetTranscriptFile();
   publishState();
-  res.json({ ok: true, sessionId, status: 'active' });
+  res.json({ ok: true, ...session, status: 'active' });
 });
 
-app.post('/api/session/end', (_, res) => {
-  lock.active = false;
-  lock.sessionId = null;
-  lock.startedAt = null;
-  lock.lastHeartbeat = null;
-  lock.clientId = null;
+app.post('/api/session/resume', (req, res) => {
+  if (sessionLock.expireIfNeeded()) {
+    resetTranscriptFile();
+    publishState();
+  }
+  const session = sessionLock.resume(req.body?.sessionId);
+  if (!session) {
+    return res.status(409).json({ ok: false, error: 'session expired or not owned by this tab' });
+  }
 
+  res.json({ ok: true, ...session, status: 'active' });
+});
+
+app.post('/api/session/heartbeat', (req, res) => {
+  if (sessionLock.expireIfNeeded()) {
+    resetTranscriptFile();
+    publishState();
+  }
+  if (!sessionLock.heartbeat(req.body?.sessionId)) {
+    return res.status(409).json({ ok: false, error: 'session expired or not owned by this tab' });
+  }
+
+  res.json({ ok: true });
+});
+
+app.post('/api/session/end', (req, res) => {
+  if (sessionLock.expireIfNeeded()) {
+    resetTranscriptFile();
+    publishState();
+  }
+  if (!sessionLock.end(req.body?.sessionId)) {
+    return res.status(409).json({ ok: false, error: 'session expired or not owned by this tab' });
+  }
+
+  resetTranscriptFile();
   publishState();
   res.json({ ok: true, status: 'idle' });
 });
 
 app.post('/api/session/reset', (_, res) => {
-  lock.active = false;
-  lock.sessionId = null;
-  lock.startedAt = null;
-  lock.lastHeartbeat = null;
-  lock.clientId = null;
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(404).json({ ok: false, error: 'not found' });
+  }
 
+  sessionLock.forceEnd();
+  devBusySessionId = null;
+  resetTranscriptFile();
   publishState();
   res.json({ ok: true, status: 'idle' });
 });
 
+app.post('/api/dev/session/busy', (req, res) => {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(404).json({ ok: false, error: 'not found' });
+  }
+
+  if (sessionLock.expireIfNeeded()) {
+    resetTranscriptFile();
+    publishState();
+  }
+  clearExpiredDevBusy();
+
+  if (req.body?.busy) {
+    if (!devBusySessionId) {
+      const session = sessionLock.start();
+      if (!session) {
+        return res.status(409).json({ ok: false, error: 'another session already owns the lock' });
+      }
+      devBusySessionId = session.sessionId;
+      publishState();
+    }
+  } else if (devBusySessionId) {
+    const released = sessionLock.end(devBusySessionId);
+    devBusySessionId = null;
+    if (released) publishState();
+  }
+
+  res.json({
+    ok: true,
+    devBusy: Boolean(devBusySessionId),
+    ...sessionLock.snapshot()
+  });
+});
+
 app.post('/api/transcribe', async (req, res) => {
   try {
+    if (sessionLock.expireIfNeeded()) publishState();
+    if (!sessionLock.heartbeat(req.body?.sessionId)) {
+      return res.status(409).json({ ok: false, error: 'active session required' });
+    }
+
     if (!req.body || (typeof req.body === 'object' && Object.keys(req.body).length === 0)) {
       return res.status(400).json({ ok: false, error: 'missing audio payload' });
     }
@@ -134,7 +224,7 @@ app.post('/api/transcribe', async (req, res) => {
 
     const pythonScript = path.join(rootDir, 'python', 'stt_worker.py');
     const result = await new Promise((resolve, reject) => {
-      const child = spawn('.venv/bin/python', [pythonScript, audioPath, transcriptOutputPath], {
+      const child = spawn('.venv/bin/python', [pythonScript, audioPath], {
         cwd: rootDir,
         env: process.env
       });
@@ -162,6 +252,10 @@ app.post('/api/transcribe', async (req, res) => {
         }
       });
     });
+
+    if (!sessionLock.heartbeat(req.body.sessionId)) {
+      return res.status(409).json({ ok: false, error: 'session ended before transcription completed' });
+    }
 
     const text = result.text || 'I did not catch that clearly.';
     appendTranscriptFile(text);
@@ -192,33 +286,11 @@ app.post('/api/dev/transcript', (req, res) => {
 });
 
 wss.on('connection', (socket) => {
-  socket.send(JSON.stringify({ type: 'session-state', payload: { state: lock.active ? 'active' : 'idle' } }));
+  socket.send(JSON.stringify({ type: 'session-state', payload: sessionLock.snapshot() }));
 
   socket.on('message', (raw) => {
     try {
       const data = JSON.parse(raw.toString());
-
-      if (data.type === 'session:start') {
-        lock.active = true;
-        lock.sessionId = data.payload?.sessionId ?? `session-${Date.now()}`;
-        lock.startedAt = Date.now();
-        lock.lastHeartbeat = Date.now();
-        lock.clientId = data.payload?.clientId ?? 'ws-client';
-        publishState();
-      }
-
-      if (data.type === 'session:end') {
-        lock.active = false;
-        lock.sessionId = null;
-        lock.startedAt = null;
-        lock.lastHeartbeat = null;
-        lock.clientId = null;
-        publishState();
-      }
-
-      if (data.type === 'heartbeat') {
-        lock.lastHeartbeat = Date.now();
-      }
 
       if (data.type === 'transcript') {
         broadcast('transcript', { text: data.payload?.text ?? '' });

@@ -4,23 +4,9 @@ import os
 import shutil
 import subprocess
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 
 import whisper
-
-
-def append_transcript(output_path: Path | None, text: str) -> None:
-    if output_path is None:
-        return
-
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    entry = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "text": text,
-    }
-    with output_path.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
 def convert_to_wav(path: Path) -> Path:
@@ -69,7 +55,6 @@ def main() -> int:
         return 0
 
     input_path = Path(sys.argv[1])
-    output_path = Path(sys.argv[2]) if len(sys.argv) >= 3 else None
     text = "No audio file was found."
 
     if input_path.exists():
@@ -78,7 +63,6 @@ def main() -> int:
         except Exception as exc:
             text = f"Speech transcription failed: {exc}"
 
-    append_transcript(output_path, text)
     print(json.dumps({"text": text}))
     return 0
 

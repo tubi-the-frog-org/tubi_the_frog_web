@@ -4,19 +4,24 @@ This is the minimal JSON contract between the phone UI and the teammate system.
 
 ## Browser -> server
 
-### session started
+Session ownership is managed through HTTP. The server is the only component that
+can acquire or release the single-user lock. The `sessionId` returned by start
+is an owner token: keep it in tab-scoped storage and send it only to these
+session endpoints. It is not broadcast over WebSocket.
 
-```json
-{
-  "type": "session:start",
-  "payload": {
-    "sessionId": "session-1730000000000",
-    "clientId": "phone-demo-client"
-  }
-}
-```
+| Request | Purpose |
+| --- | --- |
+| `POST /api/session/start` | Acquire the lock; returns `sessionId` |
+| `POST /api/session/resume` | Reclaim the current tab's session after refresh |
+| `POST /api/session/heartbeat` | Renew the idle timeout; send every 15 seconds |
+| `POST /api/session/end` | Release the lock |
+| `POST /api/transcribe` | Upload audio; requires the active `sessionId` |
 
-### transcript
+The server releases a session after 60 seconds without an owner heartbeat and
+enforces a 3-minute maximum duration. Configure these with
+`SESSION_IDLE_TIMEOUT_MS` and `SESSION_MAX_DURATION_MS`.
+
+### transcript event
 
 ```json
 {
@@ -29,14 +34,6 @@ This is the minimal JSON contract between the phone UI and the teammate system.
 }
 ```
 
-### session ended
-
-```json
-{
-  "type": "session:end"
-}
-```
-
 ## Server -> browser
 
 ### session state
@@ -46,8 +43,7 @@ This is the minimal JSON contract between the phone UI and the teammate system.
   "type": "session-state",
   "payload": {
     "state": "active",
-    "sessionId": "session-1730000000000",
-    "clientId": "phone-demo-client"
+    "startedAt": 1730000000000
   }
 }
 ```

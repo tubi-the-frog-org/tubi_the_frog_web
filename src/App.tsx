@@ -19,7 +19,9 @@ const getSocketUrl = () => {
   const host = window.location.hostname;
   const port = window.location.port;
 
-  const backendPort = port === '5173' || port === '4173' || !port ? '3000' : port;
+  const backendPort = port === '5173' || port === '4173' || !port
+    ? import.meta.env.VITE_BACKEND_PORT || '3000'
+    : port;
   const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
 
   if (host === 'localhost' || host === '127.0.0.1') {
@@ -31,27 +33,63 @@ const getSocketUrl = () => {
 
 function App() {
   const [sessionState, setSessionState] = useState<SessionState>('idle');
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [status, setStatus] = useState('Waiting for a customer');
   const [transcripts, setTranscripts] = useState<TranscriptItem[]>([]);
   const [lastTranscription, setLastTranscription] = useState('No transcription yet.');
   const [isRecording, setIsRecording] = useState(false);
   const [isCalibrating, setIsCalibrating] = useState(false);
+  const [isSimulatedBusy, setIsSimulatedBusy] = useState(false);
   const [isSocketConnected, setIsSocketConnected] = useState(false);
   const socketRef = useRef<WebSocket | null>(null);
+  const activeSessionIdRef = useRef<string | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const hasCalibratedRef = useRef(false);
   const recordingRequestedRef = useRef(false);
 
+  const setSessionOwnership = (sessionId: string | null) => {
+    activeSessionIdRef.current = sessionId;
+    setActiveSessionId(sessionId);
+    try {
+      if (sessionId) {
+        sessionStorage.setItem('tubi.sessionId', sessionId);
+      } else {
+        sessionStorage.removeItem('tubi.sessionId');
+      }
+    } catch (error) {
+      setStatus('This browser cannot save the session for refresh recovery.');
+    }
+  };
+
   useEffect(() => {
     const syncSessionState = async () => {
       try {
+        const storedSessionId = sessionStorage.getItem('tubi.sessionId');
+        if (storedSessionId) {
+          const resumeResponse = await fetch('/api/session/resume', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId: storedSessionId })
+          });
+
+          if (resumeResponse.ok) {
+            setSessionOwnership(storedSessionId);
+            setSessionState('active');
+            setStatus('Session resumed. Press and hold to speak.');
+            return;
+          }
+
+          setSessionOwnership(null);
+        }
+
         const response = await fetch('/api/health');
-        const body = (await response.json()) as { state?: SessionState };
-        const serverState = body.state === 'active' ? 'active' : 'idle';
+        const body = (await response.json()) as { state?: SessionState; devBusy?: boolean };
+        setIsSimulatedBusy(Boolean(body.devBusy));
+        const serverState = body.state === 'active' ? 'busy' : 'idle';
         setSessionState(serverState);
 
-        if (serverState === 'active') {
+        if (serverState === 'busy') {
           setStatus('Another customer is already using Tubi.');
         } else {
           setStatus('Waiting for a customer');
@@ -68,7 +106,9 @@ function App() {
 
     socket.onopen = () => {
       setIsSocketConnected(true);
-      setStatus('Connected. Ready to awaken Tubi.');
+      setStatus(activeSessionIdRef.current
+        ? 'Session active. Press and hold to speak.'
+        : 'Connected. Ready to awaken Tubi.');
     };
 
     socket.onclose = () => {
@@ -81,13 +121,25 @@ function App() {
 
       if (msg.type === 'session-state') {
         const nextState = (msg.payload?.state ?? 'idle') as SessionState;
-        setSessionState(nextState);
-        if (nextState === 'busy') {
-          setStatus('Another customer is already using Tubi.');
-        } else if (nextState === 'active') {
-          setStatus('Session active. Press and hold to speak.');
+        if (nextState === 'active') {
+          const isOwner = Boolean(activeSessionIdRef.current);
+          setSessionState(isOwner ? 'active' : 'busy');
+          setStatus(isOwner
+            ? 'Session active. Press and hold to speak.'
+            : 'Another customer is already using Tubi.');
         } else {
-          setStatus('Waiting for a customer');
+          const wasOwner = Boolean(activeSessionIdRef.current);
+          setSessionState('idle');
+          setIsSimulatedBusy(false);
+          if (wasOwner) setSessionOwnership(null);
+          setStatus(wasOwner
+            ? 'Session timed out. The frog is free again.'
+            : 'Waiting for a customer');
+        }
+
+        if (nextState === 'busy') {
+          setSessionState('busy');
+          setStatus('Another customer is already using Tubi.');
         }
       }
 
@@ -120,9 +172,51 @@ function App() {
     return sessionState === 'active' && isSocketConnected;
   }, [sessionState, isSocketConnected]);
 
-  const sendSocketMessage = (type: string, payload: Record<string, unknown> = {}) => {
-    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) return;
-    socketRef.current.send(JSON.stringify({ type, payload }));
+  useEffect(() => {
+    if (sessionState !== 'active' || !activeSessionId || !isSocketConnected) return;
+
+    const heartbeat = async () => {
+      try {
+        const response = await fetch('/api/session/heartbeat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId: activeSessionId })
+        });
+
+        if (response.status === 409) {
+          setSessionOwnership(null);
+          setSessionState('idle');
+          setStatus('Session expired. Awaken Tubi to start again.');
+        }
+      } catch (error) {
+        // The server's idle timeout releases this lock if the phone stays offline.
+      }
+    };
+
+    void heartbeat();
+    const heartbeatTimer = window.setInterval(() => void heartbeat(), 15_000);
+    return () => window.clearInterval(heartbeatTimer);
+  }, [sessionState, activeSessionId, isSocketConnected]);
+
+  const toggleSimulatedBusy = async (busy: boolean) => {
+    setIsSimulatedBusy(busy);
+    try {
+      const response = await fetch('/api/dev/session/busy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ busy })
+      });
+      const body = (await response.json()) as { error?: string; devBusy?: boolean; state?: SessionState };
+      if (!response.ok) throw new Error(body.error ?? 'Unable to change the simulated busy state');
+
+      setIsSimulatedBusy(Boolean(body.devBusy));
+      setStatus(body.state === 'active'
+        ? 'Another customer is already using Tubi.'
+        : 'Test busy mode is off. The frog is free.');
+    } catch (error) {
+      setIsSimulatedBusy(!busy);
+      setStatus(error instanceof Error ? error.message : 'Unable to change the simulated busy state');
+    }
   };
 
   const addTranscript = (text: string, source: 'user' | 'system' = 'system') => {
@@ -166,6 +260,7 @@ function App() {
   const resetLock = async () => {
     try {
       await fetch('/api/session/reset', { method: 'POST' });
+      setSessionOwnership(null);
       setSessionState('idle');
       setStatus('Lock reset. The frog is free again.');
     } catch (error) {
@@ -179,8 +274,7 @@ function App() {
     try {
       const response = await fetch('/api/session/start', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clientId: 'phone-demo-client' })
+        headers: { 'Content-Type': 'application/json' }
       });
 
       const body = await response.json();
@@ -194,10 +288,10 @@ function App() {
         throw new Error(body?.error ?? 'Unable to start the session');
       }
 
+      setSessionOwnership(body.sessionId);
       hasCalibratedRef.current = false;
       setSessionState('active');
       setStatus('Session started. Press and hold to speak.');
-      sendSocketMessage('session:start', { sessionId: body.sessionId });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to start the session';
       setStatus(message);
@@ -206,10 +300,17 @@ function App() {
 
   const endSession = async () => {
     try {
-      await fetch('/api/session/end', { method: 'POST' });
+      const response = await fetch('/api/session/end', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: activeSessionId })
+      });
+      if (!response.ok && response.status !== 409) throw new Error('Unable to end session');
+      setSessionOwnership(null);
       setSessionState('idle');
-      setStatus('Session ended. The frog is ready for the next customer.');
-      sendSocketMessage('session:end');
+      setStatus(response.status === 409
+        ? 'Session already expired. The frog is ready for the next customer.'
+        : 'Session ended. The frog is ready for the next customer.');
     } catch (error) {
       setStatus('Unable to end the session cleanly.');
     }
@@ -320,6 +421,7 @@ function App() {
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
+            sessionId: activeSessionId,
             audioBase64: base64,
             mimeType: audioBlob.type || 'audio/webm',
             extension: audioBlob.type.includes('wav') ? 'wav' : 'webm'
@@ -360,6 +462,17 @@ function App() {
         <div className="panel">
           <p className="status-message">{status}</p>
 
+          {import.meta.env.DEV && (
+            <label className="busy-test-toggle">
+              <input
+                type="checkbox"
+                checked={isSimulatedBusy}
+                onChange={(event) => void toggleSimulatedBusy(event.target.checked)}
+              />
+              <span>Simulate frog busy</span>
+            </label>
+          )}
+
           {sessionState === 'idle' && (
             <button className="primary-button" onClick={startSession}>
               Awaken Tubi
@@ -389,9 +502,11 @@ function App() {
               <button className="secondary-button" disabled>
                 Frog is busy
               </button>
-              <button className="tiny-button" onClick={resetLock}>
-                Reset lock (dev only)
-              </button>
+              {import.meta.env.DEV && (
+                <button className="tiny-button" onClick={resetLock}>
+                  Reset lock (dev only)
+                </button>
+              )}
             </div>
           )}
 
